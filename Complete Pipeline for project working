@@ -1,0 +1,50 @@
+FYERS Real-Time Data
+        ↓
+NSE Stock Screening
+        ↓
+₹30 – ₹500
+        ↓
+Bid Qty > 10 Lakh
+Ask Qty > 10 Lakh
+        ↓
+1-Minute Data
+        ↓
+SMMA 20 + SMMA 120
+        ↓
+Crossover Detection
+        ↓
+┌──────────────────────────────┐
+│ AI/ML Feature Engineering    │
+│                              │
+│ LTQ                         │
+│ LTQ Change                  │
+│ LTQ Acceleration            │
+│ Bid Quantity                │
+│ Ask Quantity                │
+│ Bid/Ask Imbalance           │
+│ Bid/Ask Spread              │
+│ Price Momentum              │
+│ Volume Change               │
+│ SMMA Spread                 │
+│ SMMA Direction              │
+└──────────────┬───────────────┘
+               ↓
+         Random Forest
+               ↓
+       Probability 0–100%
+               ↓
+       ┌───────┴────────┐
+       ↓                ↓
+   ACCEPT             AVOID
+       ↓
+ Paper Trade
+       ↓
+ Continuous Monitoring
+       ↓
+ ┌─────┼─────────────┐
+ ↓     ↓             ↓
+HOLD TARGET    DETERIORATING
+       ↓
+      EXIT
+       ↓
+      P/L
