@@ -1,0 +1,23 @@
+SMMA20 crosses above SMMA120
+             ↓
+            BUY
+and:
+
+SMMA20 crosses below SMMA120
+             ↓
+            SELL
+
+StrategyB-AI/ML Filtered
+-----------------------------
+
+SMMA crossover
+      ↓
+AI/ML
+      ↓
+Probability
+      ↓
+ ┌────┴────┐
+ ↓         ↓
+ACCEPT    AVOID
+ ↓
+Trade
