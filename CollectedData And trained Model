@@ -1,0 +1,18 @@
+First Collect
+-------------
+3_data_and_model/
+└── day1/
+    ├── raw_ticks.csv
+    └── minute_bars.csv
+
+Raw Data Contains Fields
+-----------------------
+timestamp
+symbol
+LTP
+LTQ
+volume
+bid_price
+bid_qty
+ask_price
+ask_qty
