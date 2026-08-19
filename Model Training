@@ -1,0 +1,15 @@
+Day 1 live data
+      ↓
+SMMA calculation
+      ↓
+Crossover identification
+      ↓
+Feature extraction
+      ↓
+Determine actual outcome
+      ↓
+Training dataset
+      ↓
+Random Forest
+      ↓
+crossover_model.pkl
