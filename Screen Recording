@@ -1,0 +1,72 @@
+Application Startup
+---------------------
+python -m app.main
+
+Stock Screening:
+----------------------
+LTP ₹30–₹500
+Bid Quantity > 10 lakh
+Ask Quantity > 10 lakh
+
+SMMA
+-----------------------
+SMMA 20
+SMMA 120
+
+LTQ ANALYSIS
+----------------------
+LTQ
+LTQ Change
+LTQ Acceleration
+
+BID/ASK ANALYSIS
+-----------------
+Bid Price
+Bid Quantity
+Ask Price
+Ask Quantity
+Bid/Ask Imbalance
+Spread
+
+AI/ML
+--------------
+Features
+   ↓
+Random Forest
+   ↓
+Probability = XX%
+THEN
+ACCEPT
+
+PAPER TARDING
+--------------
+Signal
+   ↓
+ACCEPT
+   ↓
+Paper BUY/SELL
+   ↓
+Entry Price
+   ↓
+Current Price
+   ↓
+P/L
+
+Deterioration
+--------------
+Initial:
+
+Probability       78%
+Bid/Ask imbalance +0.30
+LTQ               Increasing
+Status            ACCEPT
+
+THEN
+--------
+Later:
+
+Probability       43%
+Bid/Ask imbalance -0.18
+LTQ               Decreasing
+Status            DETERIORATING
+
