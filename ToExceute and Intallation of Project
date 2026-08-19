@@ -1,0 +1,15 @@
+Creating .exe File
+--------------------------------
+2_executable/
+└── AIStockPaperTrader.exe
+Project Directory
+--------------------------------
+pip install pyinstaller
+Then After Project executable is 
+---------------------------------
+pyinstaller --onefile --name AIStockPaperTrader app/main.py
+
+Our Exceutable code is
+----------------------------
+dist/
+└── AIStockPaperTrader.exe
