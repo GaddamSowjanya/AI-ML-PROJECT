@@ -1,0 +1,47 @@
+========================================================
+       AI/ML REAL-TIME STOCK SCREENING
+             PAPER TRADING ONLY
+========================================================
+
+Stock       SBIN
+LTP         ₹812.50
+
+SMMA 20     812.31
+SMMA 120    812.20
+Spread      +0.11
+
+Signal      BUY
+
+--------------------------------------------------------
+
+LTQ                 125
+LTQ Change          +30
+LTQ Acceleration    +15
+
+Bid Price           ₹812.45
+Bid Quantity        12.50 Lakh
+
+Ask Price           ₹812.55
+Ask Quantity        11.80 Lakh
+
+Bid/Ask Imbalance   +2.9%
+
+--------------------------------------------------------
+
+AI Probability     78%
+
+Decision            ACCEPT
+
+Reason:
+Strong bid support + increasing LTQ +
+positive SMMA direction
+
+--------------------------------------------------------
+
+Paper Trade         OPEN
+Entry               ₹812.50
+Current             ₹814.20
+P/L                 +₹1.70
+
+Status              HOLD
+========================================================
