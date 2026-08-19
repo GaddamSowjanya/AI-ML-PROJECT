@@ -1,0 +1,17 @@
+Day 1
+   ↓
+TRAIN
+   ↓
+model.pkl
+   ↓
+FREEZE MODEL
+   ↓
+Day 2 LIVE DATA
+   ↓
+PREDICTIONS
+   ↓
+ACCEPT / AVOID
+   ↓
+Actual outcomes
+   ↓
+VALIDATION
