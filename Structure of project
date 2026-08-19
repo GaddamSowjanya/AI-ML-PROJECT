@@ -1,0 +1,52 @@
+AI-ML-Stock-Screening/
+│
+├── 1_source_code/
+│   ├── app/
+│   │   ├── main.py
+│   │   ├── config.py
+│   │   ├── data/
+│   │   │   ├── broker.py
+│   │   │   ├── market_data.py
+│   │   │   └── storage.py
+│   │   ├── indicators/
+│   │   │   └── smma.py
+│   │   ├── features/
+│   │   │   └── feature_engineering.py
+│   │   ├── strategy/
+│   │   │   ├── crossover.py
+│   │   │   └── paper_trading.py
+│   │   ├── ml/
+│   │   │   ├── train.py
+│   │   │   ├── predict.py
+│   │   │   └── validate.py
+│   │   └── dashboard/
+│   │       └── dashboard.py
+│   ├── requirements.txt
+│   ├── .env.example
+│   ├── .gitignore
+│   ├── README.md
+│   └── build_exe.bat
+│
+├── 2_executable/
+│   └── AIStockPaperTrader.exe
+│
+├── 3_data_and_model/
+│   ├── day1/
+│   │   ├── raw_ticks.csv
+│   │   └── minute_bars.csv
+│   ├── day2/
+│   │   ├── raw_ticks.csv
+│   │   └── minute_bars.csv
+│   └── model/
+│       ├── crossover_model.pkl
+│       └── feature_importance.csv
+│
+├── 4_performance_report/
+│   ├── performance_report.pdf
+│   ├── performance_report.csv
+│   └── signals.csv
+│
+├── 5_screen_recording/
+│   └── demo.mp4
+│
+└── README.md
