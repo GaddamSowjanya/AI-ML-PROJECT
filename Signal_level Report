@@ -1,0 +1,46 @@
+Create:
+--------------
+signals.csv
+With:
+-------------
+Timestamp
+Stock
+Signal
+LTP
+SMMA20
+SMMA120
+LTQ
+LTQ Change
+LTQ Acceleration
+Bid Price
+Bid Quantity
+Ask Price
+Ask Quantity
+Bid/Ask Imbalance
+ML Probability
+Decision
+Reason
+Actual Outcome
+P/L
+
+Example Structure:
+------------------
+09:45:00
+SBIN
+BUY
+812.50
+812.31
+812.20
+125
++30
++15
+812.45
+1250000
+812.55
+1180000
++0.029
+0.78
+ACCEPT
+Strong bid support + increasing LTQ
+PROFIT
+4.85
