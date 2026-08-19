@@ -1,0 +1,1294 @@
+app/config.py
+-------------------
+import os
+from dotenv import load_dotenv
+
+load_dotenv()
+
+SYMBOLS = [
+    s.strip()
+    for s in os.getenv("SYMBOLS", "").split(",")
+    if s.strip()
+]
+
+MIN_PRICE = float(os.getenv("MIN_PRICE", "30"))
+MAX_PRICE = float(os.getenv("MAX_PRICE", "500"))
+MIN_BOOK_QTY = int(os.getenv("MIN_BOOK_QTY", "1000000"))
+
+ML_THRESHOLD = float(os.getenv("ML_THRESHOLD", "0.65"))
+TARGET_PCT = float(os.getenv("TARGET_PCT", "0.006"))
+STOP_PCT = float(os.getenv("STOP_PCT", "0.003"))
+MAX_HOLD_MINUTES = int(os.getenv("MAX_HOLD_MINUTES", "15"))
+
+FYERS_APP_ID = os.getenv("FYERS_APP_ID")
+FYERS_ACCESS_TOKEN = os.getenv("FYERS_ACCESS_TOKEN")
+
+app/data/broker.py
+-------------------
+from fyers_apiv3.FyersWebsocket import data_ws
+from app.config import FYERS_APP_ID, FYERS_ACCESS_TOKEN
+
+
+class FyersBroker:
+
+    def __init__(
+        self,
+        on_message,
+        on_connect,
+        on_error,
+        on_close
+    ):
+        self.socket = data_ws.FyersDataSocket(
+            access_token=f"{FYERS_APP_ID}:{FYERS_ACCESS_TOKEN}",
+            log_path="",
+            litemode=False,
+            write_to_file=False,
+            reconnect=True,
+            on_connect=on_connect,
+            on_message=on_message,
+            on_error=on_error,
+            on_close=on_close
+        )
+
+    def connect(self):
+        self.socket.connect()
+
+    def subscribe(self, symbols):
+        self.socket.subscribe(
+            symbols=symbols,
+            data_type="SymbolUpdate"
+        )
+
+        self.socket.subscribe(
+            symbols=symbols,
+            data_type="DepthUpdate"
+        )
+
+        self.socket.keep_running()
+app/data/market_data.py
+------------------------
+import time
+
+
+class MarketDataProcessor:
+
+    def __init__(self):
+        self.latest = {}
+
+    def process(self, message):
+
+        if not isinstance(message, dict):
+            return None
+
+        symbol = message.get("symbol")
+
+        if not symbol:
+            return None
+
+        data = {
+            "timestamp": message.get(
+                "timestamp",
+                time.time()
+            ),
+            "symbol": symbol,
+            "ltp": message.get(
+                "ltp",
+                message.get("lp", 0)
+            ),
+            "ltq": message.get(
+                "ltq",
+                message.get("last_traded_qty", 0)
+            ),
+            "volume": message.get(
+                "volume",
+                message.get("vol_traded_today", 0)
+            ),
+            "bid_price": message.get(
+                "bid_price",
+                message.get("bid", 0)
+            ),
+            "ask_price": message.get(
+                "ask_price",
+                message.get("ask", 0)
+            ),
+            "bid_qty": message.get(
+                "bid_qty",
+                message.get("bid_size", 0)
+            ),
+            "ask_qty": message.get(
+                "ask_qty",
+                message.get("ask_size", 0)
+            )
+        }
+
+        self.latest[symbol] = data
+
+        return data
+app/data/storage.py
+-------------------
+from pathlib import Path
+import pandas as pd
+
+
+def append_csv(path, record):
+
+    path = Path(path)
+
+    path.parent.mkdir(
+        parents=True,
+        exist_ok=True
+    )
+
+    df = pd.DataFrame([record])
+
+    df.to_csv(
+        path,
+        mode="a",
+        header=not path.exists(),
+        index=False
+    )
+
+
+def save_dataframe(path, df):
+
+    path = Path(path)
+
+    path.parent.mkdir(
+        parents=True,
+        exist_ok=True
+    )
+
+    df.to_csv(
+        path,
+        index=False
+    )
+app/indicators/smma.py
+--------------------------
+import pandas as pd
+
+
+def smma(series, period):
+
+    result = pd.Series(
+        index=series.index,
+        dtype=float
+    )
+
+    if len(series) < period:
+        return result
+
+    result.iloc[period - 1] = (
+        series.iloc[:period].mean()
+    )
+
+    for i in range(period, len(series)):
+
+        result.iloc[i] = (
+            (
+                result.iloc[i - 1]
+                * (period - 1)
+            )
+            + series.iloc[i]
+        ) / period
+
+    return result
+
+
+def add_smma(df):
+
+    df = df.copy()
+
+    df["smma20"] = smma(
+        df["close"],
+        20
+    )
+
+    df["smma120"] = smma(
+        df["close"],
+        120
+    )
+
+    df["smma_spread"] = (
+        df["smma20"]
+        - df["smma120"]
+    )
+
+    df["smma_spread_pct"] = (
+        df["smma_spread"]
+        / df["smma120"]
+    )
+
+    df["smma20_slope"] = (
+        df["smma20"].diff()
+    )
+
+    df["smma120_slope"] = (
+        df["smma120"].diff()
+    )
+
+    return df
+app/features/feature_engineering.py
+---------------------------------------
+import numpy as np
+import pandas as pd
+
+
+FEATURE_COLUMNS = [
+    "return_1",
+    "return_3",
+    "return_5",
+    "volume_change",
+    "ltq_change",
+    "ltq_acceleration",
+    "bid_qty_change",
+    "ask_qty_change",
+    "bid_ask_imbalance",
+    "imbalance_change",
+    "bid_ask_spread",
+    "spread_percentage",
+    "price_bid_distance",
+    "price_ask_distance",
+    "smma_spread",
+    "smma_spread_pct",
+    "smma20_slope",
+    "smma120_slope"
+]
+
+
+def create_features(df):
+
+    df = df.copy()
+
+    df = df.sort_values(
+        ["symbol", "timestamp"]
+    )
+
+    group = df.groupby("symbol")
+
+    df["return_1"] = (
+        group["close"].pct_change(1)
+    )
+
+    df["return_3"] = (
+        group["close"].pct_change(3)
+    )
+
+    df["return_5"] = (
+        group["close"].pct_change(5)
+    )
+
+    df["volume_change"] = (
+        group["volume"].diff()
+    )
+
+    df["ltq_change"] = (
+        group["ltq"].diff()
+    )
+
+    df["ltq_acceleration"] = (
+        group["ltq_change"].diff()
+    )
+
+    df["bid_qty_change"] = (
+        group["bid_qty"].diff()
+    )
+
+    df["ask_qty_change"] = (
+        group["ask_qty"].diff()
+    )
+
+    total_qty = (
+        df["bid_qty"]
+        + df["ask_qty"]
+    )
+
+    df["bid_ask_imbalance"] = (
+        (
+            df["bid_qty"]
+            - df["ask_qty"]
+        )
+        / total_qty.replace(0, np.nan)
+    )
+
+    df["imbalance_change"] = (
+        group["bid_ask_imbalance"].diff()
+    )
+
+    df["bid_ask_spread"] = (
+        df["ask_price"]
+        - df["bid_price"]
+    )
+
+    df["spread_percentage"] = (
+        df["bid_ask_spread"]
+        / df["close"]
+    )
+
+    df["price_bid_distance"] = (
+        df["close"]
+        - df["bid_price"]
+    )
+
+    df["price_ask_distance"] = (
+        df["ask_price"]
+        - df["close"]
+    )
+
+    return df
+
+
+def detect_crossovers(df):
+
+    df = df.copy()
+
+    previous20 = (
+        df.groupby("symbol")["smma20"]
+        .shift(1)
+    )
+
+    previous120 = (
+        df.groupby("symbol")["smma120"]
+        .shift(1)
+    )
+
+    df["signal"] = 0
+
+    buy = (
+        (previous20 <= previous120)
+        &
+        (df["smma20"] > df["smma120"])
+    )
+
+    sell = (
+        (previous20 >= previous120)
+        &
+        (df["smma20"] < df["smma120"])
+    )
+
+    df.loc[buy, "signal"] = 1
+    df.loc[sell, "signal"] = -1
+
+    return df
+app/strategy/crossover.py
+--------------------------
+from app.features.feature_engineering import (
+    detect_crossovers
+)
+
+
+def get_crossovers(df):
+
+    df = detect_crossovers(df)
+
+    return df[
+        df["signal"] != 0
+    ].copy()
+
+
+def signal_name(signal):
+
+    if signal == 1:
+        return "BUY"
+
+    if signal == -1:
+        return "SELL"
+
+    return "NONE"
+app/strategy/paper_trading.py
+---------------------------------
+class PaperTrader:
+
+    def __init__(
+        self,
+        target_pct=0.006,
+        stop_pct=0.003
+    ):
+
+        self.target_pct = target_pct
+        self.stop_pct = stop_pct
+
+        self.positions = {}
+        self.completed_trades = []
+
+    def open_trade(
+        self,
+        symbol,
+        signal,
+        price,
+        timestamp
+    ):
+
+        if symbol in self.positions:
+            return
+
+        self.positions[symbol] = {
+            "symbol": symbol,
+            "signal": signal,
+            "entry_price": price,
+            "entry_time": timestamp
+        }
+
+    def monitor(
+        self,
+        symbol,
+        price,
+        timestamp,
+        probability,
+        imbalance
+    ):
+
+        if symbol not in self.positions:
+            return None
+
+        position = self.positions[symbol]
+
+        signal = position["signal"]
+        entry = position["entry_price"]
+
+        pnl_pct = (
+            signal
+            * (price / entry - 1)
+        )
+
+        reason = None
+
+        if pnl_pct >= self.target_pct:
+            reason = "TARGET"
+
+        elif pnl_pct <= -self.stop_pct:
+            reason = "STOP_LOSS"
+
+        elif probability < 0.50:
+            reason = "ML_DETERIORATION"
+
+        elif signal == 1 and imbalance < -0.15:
+            reason = "BID_SUPPORT_LOST"
+
+        elif signal == -1 and imbalance > 0.15:
+            reason = "ASK_PRESSURE_LOST"
+
+        if reason:
+
+            trade = {
+                "symbol": symbol,
+                "signal": signal,
+                "entry_price": entry,
+                "exit_price": price,
+                "entry_time": position["entry_time"],
+                "exit_time": timestamp,
+                "pnl_pct": pnl_pct,
+                "exit_reason": reason
+            }
+
+            self.completed_trades.append(
+                trade
+            )
+
+            del self.positions[symbol]
+
+            return trade
+
+        return None
+app/ml/train.py
+--------------
+import argparse
+from pathlib import Path
+
+import joblib
+import pandas as pd
+
+from sklearn.ensemble import RandomForestClassifier
+from sklearn.metrics import (
+    accuracy_score,
+    precision_score,
+    recall_score,
+    f1_score
+)
+
+from app.indicators.smma import add_smma
+
+from app.features.feature_engineering import (
+    create_features,
+    detect_crossovers,
+    FEATURE_COLUMNS
+)
+
+
+TARGET = 0.006
+STOP = 0.003
+LOOK_AHEAD = 15
+
+
+def create_labels(df):
+
+    df = df.copy()
+    df["target"] = None
+
+    for symbol, group in df.groupby("symbol"):
+
+        group = group.sort_values(
+            "timestamp"
+        )
+
+        indices = group.index.tolist()
+        prices = group["close"].values
+        signals = group["signal"].values
+
+        for i, idx in enumerate(indices):
+
+            signal = signals[i]
+
+            if signal == 0:
+                continue
+
+            entry = prices[i]
+            outcome = None
+
+            end = min(
+                i + LOOK_AHEAD + 1,
+                len(prices)
+            )
+
+            for j in range(i + 1, end):
+
+                trade_return = (
+                    signal
+                    * (prices[j] / entry - 1)
+                )
+
+                if trade_return >= TARGET:
+                    outcome = 1
+                    break
+
+                if trade_return <= -STOP:
+                    outcome = 0
+                    break
+
+            if outcome is None:
+
+                final_return = (
+                    signal
+                    * (
+                        prices[end - 1]
+                        / entry
+                        - 1
+                    )
+                )
+
+                outcome = int(
+                    final_return > 0
+                )
+
+            df.loc[idx, "target"] = outcome
+
+    return df
+
+
+def prepare_data(path):
+
+    df = pd.read_csv(path)
+
+    df["timestamp"] = pd.to_datetime(
+        df["timestamp"]
+    )
+
+    df = df.sort_values(
+        ["symbol", "timestamp"]
+    )
+
+    df = (
+        df.groupby(
+            "symbol",
+            group_keys=False
+        )
+        .apply(add_smma)
+        .reset_index(drop=True)
+    )
+
+    df = create_features(df)
+
+    df = detect_crossovers(df)
+
+    df = create_labels(df)
+
+    df = df[
+        df["signal"] != 0
+    ]
+
+    df = df.dropna(
+        subset=FEATURE_COLUMNS + ["target"]
+    )
+
+    return df
+
+
+def train(df):
+
+    X = df[FEATURE_COLUMNS]
+    y = df["target"].astype(int)
+
+    split = int(
+        len(df) * 0.80
+    )
+
+    X_train = X.iloc[:split]
+    X_test = X.iloc[split:]
+
+    y_train = y.iloc[:split]
+    y_test = y.iloc[split:]
+
+    model = RandomForestClassifier(
+        n_estimators=400,
+        max_depth=8,
+        min_samples_leaf=5,
+        class_weight="balanced",
+        random_state=42,
+        n_jobs=-1
+    )
+
+    model.fit(
+        X_train,
+        y_train
+    )
+
+    predictions = model.predict(
+        X_test
+    )
+
+    print(
+        "Accuracy:",
+        accuracy_score(
+            y_test,
+            predictions
+        )
+    )
+
+    print(
+        "Precision:",
+        precision_score(
+            y_test,
+            predictions,
+            zero_division=0
+        )
+    )
+
+    print(
+        "Recall:",
+        recall_score(
+            y_test,
+            predictions,
+            zero_division=0
+        )
+    )
+
+    print(
+        "F1:",
+        f1_score(
+            y_test,
+            predictions,
+            zero_division=0
+        )
+    )
+
+    return model
+
+
+def main():
+
+    parser = argparse.ArgumentParser()
+
+    parser.add_argument(
+        "--input",
+        required=True
+    )
+
+    parser.add_argument(
+        "--output",
+        required=True
+    )
+
+    args = parser.parse_args()
+
+    df = prepare_data(
+        args.input
+    )
+
+    if len(df) < 50:
+
+        raise ValueError(
+            "Not enough crossover samples."
+        )
+
+    model = train(df)
+
+    package = {
+        "model": model,
+        "features": FEATURE_COLUMNS
+    }
+
+    Path(
+        args.output
+    ).parent.mkdir(
+        parents=True,
+        exist_ok=True
+    )
+
+    joblib.dump(
+        package,
+        args.output
+    )
+
+    print(
+        "Model saved:",
+        args.output
+    )
+
+
+if __name__ == "__main__":
+    main()
+app/ml/predict.py
+------------------
+import joblib
+
+
+class TradePredictor:
+
+    def __init__(
+        self,
+        model_path,
+        threshold=0.65
+    ):
+
+        package = joblib.load(
+            model_path
+        )
+
+        self.model = package["model"]
+        self.features = package["features"]
+        self.threshold = threshold
+
+    def predict(self, row):
+
+        X = row[
+            self.features
+        ]
+
+        probability = float(
+            self.model.predict_proba(X)[0][1]
+        )
+
+        decision = (
+            "ACCEPT"
+            if probability >= self.threshold
+            else "AVOID"
+        )
+
+        return probability, decision
+
+    def reason(
+        self,
+        row,
+        probability,
+        decision
+    ):
+
+        reasons = []
+
+        if row["ltq_change"] > 0:
+            reasons.append(
+                "LTQ increasing"
+            )
+        else:
+            reasons.append(
+                "LTQ decreasing"
+            )
+
+        if row["ltq_acceleration"] > 0:
+            reasons.append(
+                "LTQ acceleration positive"
+            )
+        else:
+            reasons.append(
+                "LTQ acceleration weakening"
+            )
+
+        if row["bid_ask_imbalance"] > 0.15:
+            reasons.append(
+                "Strong bid support"
+            )
+
+        elif row["bid_ask_imbalance"] < -0.15:
+            reasons.append(
+                "Strong ask pressure"
+            )
+
+        else:
+            reasons.append(
+                "Balanced order book"
+            )
+
+        if row["smma20_slope"] > 0:
+            reasons.append(
+                "SMMA20 rising"
+            )
+        else:
+            reasons.append(
+                "SMMA20 weakening"
+            )
+
+        return (
+            f"{decision} | "
+            f"Probability={probability:.2%} | "
+            + "; ".join(reasons)
+        )
+app/ml/validate.py
+---------------------
+import argparse
+import joblib
+import pandas as pd
+
+from app.indicators.smma import add_smma
+
+from app.features.feature_engineering import (
+    create_features,
+    detect_crossovers,
+    FEATURE_COLUMNS
+)
+
+
+def main():
+
+    parser = argparse.ArgumentParser()
+
+    parser.add_argument(
+        "--model",
+        required=True
+    )
+
+    parser.add_argument(
+        "--input",
+        required=True
+    )
+
+    parser.add_argument(
+        "--output",
+        required=True
+    )
+
+    args = parser.parse_args()
+
+    package = joblib.load(
+        args.model
+    )
+
+    model = package["model"]
+
+    df = pd.read_csv(
+        args.input
+    )
+
+    df["timestamp"] = pd.to_datetime(
+        df["timestamp"]
+    )
+
+    df = (
+        df.groupby(
+            "symbol",
+            group_keys=False
+        )
+        .apply(add_smma)
+        .reset_index(drop=True)
+    )
+
+    df = create_features(df)
+
+    df = detect_crossovers(df)
+
+    signals = df[
+        df["signal"] != 0
+    ].copy()
+
+    signals = signals.dropna(
+        subset=FEATURE_COLUMNS
+    )
+
+    X = signals[
+        FEATURE_COLUMNS
+    ]
+
+    signals["probability"] = (
+        model.predict_proba(X)[:, 1]
+    )
+
+    signals["decision"] = (
+        signals["probability"]
+        >= 0.65
+    ).map({
+        True: "ACCEPT",
+        False: "AVOID"
+    })
+
+    signals.to_csv(
+        args.output,
+        index=False
+    )
+
+    print(
+        "Day-2 validation completed."
+    )
+
+
+if __name__ == "__main__":
+    main()
+app/main.py
+-----------
+from app.config import (
+    SYMBOLS,
+    FYERS_APP_ID,
+    FYERS_ACCESS_TOKEN
+)
+
+from app.data.broker import FyersBroker
+from app.data.market_data import MarketDataProcessor
+from app.data.storage import append_csv
+
+
+processor = MarketDataProcessor()
+
+
+def on_message(message):
+
+    data = processor.process(
+        message
+    )
+
+    if data is None:
+        return
+
+    print(
+        f"{data['symbol']} | "
+        f"LTP={data['ltp']} | "
+        f"LTQ={data['ltq']} | "
+        f"BID={data['bid_price']} "
+        f"({data['bid_qty']}) | "
+        f"ASK={data['ask_price']} "
+        f"({data['ask_qty']})"
+    )
+
+    append_csv(
+        "data/raw/ticks.csv",
+        data
+    )
+
+
+def on_connect():
+
+    print(
+        "Connected to FYERS"
+    )
+
+    print(
+        "Subscribing to market data..."
+    )
+
+    broker.subscribe(
+        SYMBOLS
+    )
+
+
+def on_error(message):
+
+    print(
+        "WebSocket error:",
+        message
+    )
+
+
+def on_close(message):
+
+    print(
+        "WebSocket closed:",
+        message
+    )
+
+
+if __name__ == "__main__":
+
+    if not FYERS_APP_ID:
+        raise RuntimeError(
+            "FYERS_APP_ID missing"
+        )
+
+    if not FYERS_ACCESS_TOKEN:
+        raise RuntimeError(
+            "FYERS_ACCESS_TOKEN missing"
+        )
+
+    if not SYMBOLS:
+        raise RuntimeError(
+            "SYMBOLS missing"
+        )
+
+    broker = FyersBroker(
+        on_message,
+        on_connect,
+        on_error,
+        on_close
+    )
+
+    broker.connect()
+
+app/dashboard/dashboard.py
+--------------------------
+from pathlib import Path
+
+import pandas as pd
+import streamlit as st
+
+
+st.set_page_config(
+    page_title="AI Stock Screening",
+    layout="wide"
+)
+
+st.title(
+    "AI/ML Real-Time Stock Screening"
+)
+
+st.caption(
+    "Paper Trading Only"
+)
+
+
+def load_file(path):
+
+    path = Path(path)
+
+    if not path.exists():
+        return pd.DataFrame()
+
+    return pd.read_csv(path)
+
+
+signals = load_file(
+    "data/processed/signals.csv"
+)
+
+trades = load_file(
+    "data/processed/paper_trades.csv"
+)
+
+
+col1, col2, col3, col4 = st.columns(4)
+
+total = len(signals)
+
+accepted = 0
+avoided = 0
+
+if not signals.empty:
+
+    accepted = (
+        signals["decision"]
+        == "ACCEPT"
+    ).sum()
+
+    avoided = (
+        signals["decision"]
+        == "AVOID"
+    ).sum()
+
+
+col1.metric(
+    "Crossover Signals",
+    total
+)
+
+col2.metric(
+    "Accepted",
+    accepted
+)
+
+col3.metric(
+    "Avoided",
+    avoided
+)
+
+col4.metric(
+    "Paper Trades",
+    len(trades)
+)
+
+
+st.subheader(
+    "AI/ML Signal Decisions"
+)
+
+if not signals.empty:
+
+    st.dataframe(
+        signals.tail(100),
+        use_container_width=True
+    )
+
+else:
+
+    st.info(
+        "No signals available."
+    )
+
+
+st.subheader(
+    "Paper Trades"
+)
+
+if not trades.empty:
+
+    st.dataframe(
+        trades.tail(100),
+        use_container_width=True
+    )
+
+else:
+
+    st.info(
+        "No paper trades available."
+    )
+requirements.txt
+---------------------
+fyers-apiv3
+pandas
+numpy
+scikit-learn
+joblib
+streamlit
+plotly
+python-dotenv
+pyinstaller
+.env.example
+-------------
+FYERS_APP_ID=YOUR_APP_ID
+FYERS_ACCESS_TOKEN=YOUR_ACCESS_TOKEN
+
+SYMBOLS=NSE:SBIN-EQ,NSE:ITC-EQ,NSE:ONGC-EQ,NSE:IOC-EQ
+
+MIN_PRICE=30
+MAX_PRICE=500
+MIN_BOOK_QTY=1000000
+
+ML_THRESHOLD=0.65
+
+TARGET_PCT=0.006
+STOP_PCT=0.003
+MAX_HOLD_MINUTES=15
+.gitignore
+-------------
+.env
+.venv/
+venv/
+__pycache__/
+*.pyc
+*.log
+
+data/raw/*
+data/processed/*
+
+models/*.pkl
+
+.streamlit/secrets.toml
+build_exe.bat
+---------------
+@echo off
+
+pip install -r requirements.txt
+
+pyinstaller --onefile --name AIStockPaperTrader app/main.py
+
+echo.
+echo EXE created:
+echo dist\AIStockPaperTrader.exe
+
+pause
+README.md
+------------
+# AI/ML-Based Real-Time Stock Screening & Trade Filtering
+
+## Objective
+
+A Python-based real-time stock screening and paper-trading system using:
+
+- SMMA 20
+- SMMA 120
+- LTQ
+- Bid/Ask market depth
+- Bid/Ask imbalance
+- Machine Learning
+- Paper trading
+
+## Strategy
+
+Stocks are screened using:
+
+- NSE stocks
+- LTP between ₹30 and ₹500
+- Bid quantity > 10 lakh
+- Ask quantity > 10 lakh
+- 1-minute timeframe
+
+A BUY signal occurs when SMMA20 crosses above SMMA120.
+
+A SELL signal occurs when SMMA20 crosses below SMMA120.
+
+The ML model evaluates the crossover using market microstructure and technical features.
+
+## ML Features
+
+- Price returns
+- Volume change
+- LTQ change
+- LTQ acceleration
+- Bid quantity change
+- Ask quantity change
+- Bid/Ask imbalance
+- Imbalance change
+- Bid/Ask spread
+- Price-to-book distances
+- SMMA spread
+- SMMA slopes
+
+## Decision
+
+Probability >= 65%:
+
+ACCEPT
+
+Probability < 65%:
+
+AVOID
+
+## Paper Trading
+
+No real-money orders are placed.
+
+The system records:
+
+- Entry
+- Exit
+- P/L
+- Exit reason
+- Signal
+- ML probability
+
+## Validation
+
+Day-1 data is used to train the model.
+
+The trained model is frozen.
+
+Day-2 data is used for validation without retraining before prediction.
+
+## Security
+
+API credentials must be stored in `.env`.
+
+Never commit `.env` to GitHub.
